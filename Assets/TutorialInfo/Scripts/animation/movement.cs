@@ -1,98 +1,112 @@
 using UnityEngine;
 
 [RequireComponent(typeof(Rigidbody))]
-public class movement : MonoBehaviour
+[RequireComponent(typeof(Animator))]
+public class Movement : MonoBehaviour
 {
-    [Header("ตั้งค่าความเร็ว (ปรับได้อิสระ)")]
-    public float walkSpeed = 5f;        // ความเร็วเดินปกติ
-    public float sprintSpeed = 10f;     // ความเร็วตอนกด Shift วิ่ง
-    public float jumpForce = 5f;        // แรงพุ่งตอนกระโดด
-    
-    [Header("การเช็คพื้น")]
-    public float groundCheckDistance = 1.1f; // ระยะที่ยิงเส้นเพื่อตรวจว่ายืนติดดินไหม
+    [Header("การเคลื่อนที่ (Movement Settings)")]
+    public float walkSpeed = 3f;
+    public float runSpeed = 6f;
+    public float jumpForce = 5f;
 
-    [Header("แอนิเมชัน")]
-    public Animator animator;           // ช่องสำหรับลาก Animator มาใส่
+    [Header("ช่องใส่ Animation (ลากไฟล์ Animation มาใส่ที่นี่)")]
+    public AnimationClip idleClip;
+    public AnimationClip walkClip;
+    public AnimationClip runClip;
+    public AnimationClip jumpClip;
 
     private Rigidbody rb;
-    private bool isGrounded;
+    private Animator animator;
+    
+    private string currentAnimName;
+    private bool isGrounded = true;
 
     void Start()
     {
         rb = GetComponent<Rigidbody>();
+        animator = GetComponent<Animator>();
         
-        // ล็อกไม่ให้ตัวละครล้มกลิ้งไปมาเวิ้งว้างเวลากระแทกของ
-        rb.freezeRotation = true; 
-
-        // ถ้าลืมลาก Animator มาใส่ ให้ตัวสคริปต์พยายามหาเอง
-        if (animator == null)
-        {
-            animator = GetComponent<Animator>();
-        }
+        // ล็อคการหมุนไม่ให้ตัวละครล้มเมื่อใช้ฟิสิกส์ Rigidbody
+        rb.freezeRotation = true;
     }
 
     void Update()
     {
-        // 1. เช็คว่าตัวละครยืนติดพื้นหรือไม่ (ยิงเส้น Raycast ลงไปด้านล่าง)
-        isGrounded = Physics.Raycast(transform.position, Vector3.down, groundCheckDistance);
+        // 1. รับค่า Input
+        float moveX = Input.GetAxisRaw("Horizontal");
+        float moveZ = Input.GetAxisRaw("Vertical");
+        
+        // 2. สร้าง Vector ทิศทางอิงตามทิศหน้าหุ่น (Local Space)
+        // W = ไปข้างหน้า (transform.forward)
+        // S = ถอยหลัง (-transform.forward)
+        // A = ไปทางซ้าย (-transform.right)
+        // D = ไปทางขวา (transform.right)
+        Vector3 moveDirection = (transform.right * moveX + transform.forward * moveZ).normalized;
 
-        // ส่งสถานะพื้นบอก Animator ให้รู้
-        if (animator != null)
+        // 3. ตรวจสอบการเดินและวิ่ง
+        bool isWalking = moveDirection.sqrMagnitude > 0.01f;
+        bool isRunning = isWalking && Input.GetKey(KeyCode.LeftShift);
+        float currentSpeed = isRunning ? runSpeed : walkSpeed;
+
+        // 4. การเคลื่อนที่ตามทิศทางของหุ่น
+        if (isWalking)
         {
-            animator.SetBool("IsGrounded", isGrounded);
+            rb.velocity = new Vector3(moveDirection.x * currentSpeed, rb.velocity.y, moveDirection.z * currentSpeed);
+        }
+        else
+        {
+            // ถ้าไม่กดปุ่ม ให้ความเร็วแนวราบเป็น 0 (หุ่นจะได้ไม่สไลด์)
+            rb.velocity = new Vector3(0, rb.velocity.y, 0);
         }
 
-        // 2. กระโดด (กด Spacebar และต้องยืนอยู่บนพื้นเท่านั้น)
+        // 5. กด Spacebar เพื่อกระโดด (ต้องอยู่บนพื้นเท่านั้น)
         if (Input.GetKeyDown(KeyCode.Space) && isGrounded)
         {
-            // ดันตัวละครขึ้นบนฟ้า
             rb.AddForce(Vector3.up * jumpForce, ForceMode.Impulse);
-            
-            if (animator != null)
+            isGrounded = false;
+            PlayAnimation(jumpClip); // เล่นท่ากระโดดทันที
+        }
+
+        // 6. เปลี่ยนแอนิเมชันตามสถานะปัจจุบัน (เฉพาะตอนอยู่บนพื้นเท่านั้น)
+        if (isGrounded)
+        {
+            if (isRunning)
             {
-                animator.SetTrigger("Jump"); // เล่นท่ากระโดด
+                PlayAnimation(runClip);     // ท่าวิ่ง
+            }
+            else if (isWalking)
+            {
+                PlayAnimation(walkClip);    // ท่าเดิน
+            }
+            else
+            {
+                PlayAnimation(idleClip);    // ท่ายืนนิ่ง
             }
         }
     }
 
-    void FixedUpdate()
+    void OnCollisionEnter(Collision collision)
     {
-        // 3. รับค่าทิศทางการเดิน W A S D
-        float horizontal = Input.GetAxisRaw("Horizontal"); // A (-1), D (1)
-        float vertical = Input.GetAxisRaw("Vertical");     // S (-1), W (1)
+        // เมื่อชนวัตถุใดๆ (ที่คาดว่าเป็นพื้น) ให้สามารถกระโดดใหม่ได้
+        // (สามารถประยุกต์เช็ค collision.gameObject.CompareTag("Ground") ได้ถ้าต้องการ)
+        isGrounded = true;
+    }
 
-        // ผสมทิศทางให้เป็นเวกเตอร์เดียว พร้อมปรับขนาดไม่ให้เดินเฉียงไวเกินปกติ (.normalized)
-        Vector3 moveDirection = (transform.forward * vertical + transform.right * horizontal).normalized;
+    // ฟังก์ชันสำหรับเล่นแอนิเมชันอย่างนุ่มนวล
+    private void PlayAnimation(AnimationClip clip)
+    {
+        // ป้องกัน Error หากไม่ได้ใส่ไฟล์ Animation มาให้
+        if (clip == null) return;
+        
+        // ใช้ชื่อไฟล์ของ Animation เป็นตัวกำหนดเป้าหมาย
+        string targetAnim = clip.name;
 
-        // 4. คำนวณความเร็ว (เช็คว่ากด Left Shift ค้างอยู่หรือไม่)
-        bool isSprinting = Input.GetKey(KeyCode.LeftShift);
-        float currentSpeed = walkSpeed;
-
-        if (isSprinting) 
+        // เปลี่ยนแอนิเมชันเฉพาะเมื่อไม่ใช่แอนิเมชันเดิม เพื่อไม่ให้มันเล่นตั้งแต่จุดเริ่มต้นซ้ำๆ
+        if (currentAnimName != targetAnim)
         {
-            currentSpeed = sprintSpeed; // เปลี่ยนโหมดเป็นความเร็ววิ่ง
-        }
-
-        // ถ้าปล่อยปุ่มหมด (ไม่ได้เดิน) ให้ความเร็วเป็นศูนย์
-        if (moveDirection.magnitude == 0)
-        {
-            currentSpeed = 0f;
-        }
-
-        // 5. สั่งตัวละครให้เคลื่อนที่ในแกนแนวนอน ส่วนแนวแกน Y (ความสูง) ปล่อยให้มันร่วงตามแรงโน้มถ่วงเดิม
-        Vector3 movementVec = moveDirection * currentSpeed;
-        rb.velocity = new Vector3(movementVec.x, rb.velocity.y, movementVec.z);
-
-        // 6. อัปเดตความเร็วไปยัง Animator
-        if (animator != null)
-        {
-            float animationSpeedValue = 0f; // สมมติว่าพารามิเตอร์ของ Animator เราใช้: 0=ยืนนิ่ง, 1=เดิน, 2=วิ่ง
-            
-            if (currentSpeed == walkSpeed && moveDirection.magnitude > 0) animationSpeedValue = 1f;
-            else if (currentSpeed == sprintSpeed && moveDirection.magnitude > 0) animationSpeedValue = 2f;
-
-            // เอาค่าที่ได้ไปยัดใส่ตัวแปร "Speed" ใน Animator
-            animator.SetFloat("Speed", animationSpeedValue);
+            // ใช้ CrossFadeInFixedTime ช่วยให้การเปลี่ยนผ่านระหว่างแอนิเมชันสมูทขึ้น (ในระยะเวลา 0.15 วิ)
+            animator.CrossFadeInFixedTime(targetAnim, 0.15f);
+            currentAnimName = targetAnim;
         }
     }
 }
