@@ -2,8 +2,9 @@ using UnityEngine;
 
 public class MouseLook : MonoBehaviour
 {
-    [Header("ความเร็วในการหันมุมกล้อง")]
-    public float mouseSensitivity = 100f;
+    [Header("ความเร็วในการหันมุมกล้อง (Mouse Sensitivity)")]
+    public float mouseSensitivityX = 100f;
+    public float mouseSensitivityY = 100f;
 
     [Header("เป้าหมายที่ต้องการหมุน (ตัวละครหลัก)")]
     public Transform playerBody;
@@ -18,7 +19,7 @@ public class MouseLook : MonoBehaviour
         LockCursor(true);
     }
 
-    void Update()
+    void LateUpdate()
     {
         // 1. ตรวจสอบการกดปุ่ม ESC เพื่อสลับสถานะเมาส์
         if (Input.GetKeyDown(KeyCode.Escape))
@@ -30,17 +31,16 @@ public class MouseLook : MonoBehaviour
         // 2. ถ้าเมาส์ล็อคอยู่ ให้สามารถหันมุมกล้องได้
         if (isCursorLocked)
         {
-            float mouseX = Input.GetAxis("Mouse X") * mouseSensitivity * Time.deltaTime;
-            float mouseY = Input.GetAxis("Mouse Y") * mouseSensitivity * Time.deltaTime;
+            float mouseX = Input.GetAxis("Mouse X") * mouseSensitivityX * Time.deltaTime;
+            // float mouseY = Input.GetAxis("Mouse Y") * mouseSensitivityY * Time.deltaTime; // ปิดการรับค่าเมาส์แนวตั้ง
 
-            // หมุนขึ้น/ลง (แกน X ของกล้อง) และจำกัดมุม
-            xRotation -= mouseY;
-            xRotation = Mathf.Clamp(xRotation, -90f, 90f);
+            // ล็อกแกน X ของกล้อง (การหมุนขึ้น/ลง) ให้เป็น 0 ตลอดเวลา เพื่อไม่ให้สั่นขึ้นลง
+            xRotation = 0f;
 
             // หมุนซ้าย/ขวา (แกน Y ของกล้อง)
             yRotation += mouseX;
 
-            // หมุนกล้องอิสระทั้งขึ้นลง(X) และซ้ายขวา(Y)
+            // หมุนกล้องเฉพาะซ้ายขวา(Y) โดยล็อกขึ้นลง(X) ไว้ที่ 0
             transform.localRotation = Quaternion.Euler(xRotation, yRotation, 0f);
 
             // ไม่หมุน playerBody อีกต่อไป (ล็อกแกน Y ของตัวละครหุ่นไว้)
