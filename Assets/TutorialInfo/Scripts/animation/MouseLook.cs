@@ -32,18 +32,17 @@ public class MouseLook : MonoBehaviour
         if (isCursorLocked)
         {
             float mouseX = Input.GetAxis("Mouse X") * mouseSensitivityX * Time.deltaTime;
-            // float mouseY = Input.GetAxis("Mouse Y") * mouseSensitivityY * Time.deltaTime; // ปิดการรับค่าเมาส์แนวตั้ง
+            float mouseY = Input.GetAxis("Mouse Y") * mouseSensitivityY * Time.deltaTime;
 
-            // ล็อกแกน X ของกล้อง (การหมุนขึ้น/ลง) ให้เป็น 0 ตลอดเวลา เพื่อไม่ให้สั่นขึ้นลง
-            xRotation = 0f;
+            // คำนวณการหมุนแกน X (ขึ้น/ลง) และจำกัดมุมเพื่อไม่ให้กล้องหมุนกลับหัว
+            xRotation -= mouseY;
+            xRotation = Mathf.Clamp(xRotation, -90f, 90f);
 
             // หมุนซ้าย/ขวา (แกน Y ของกล้อง)
             yRotation += mouseX;
 
-            // หมุนกล้องเฉพาะซ้ายขวา(Y) โดยล็อกขึ้นลง(X) ไว้ที่ 0
+            // นำค่าไปใส่ให้กล้องหมุนตามที่เมาส์ขยับทุกทิศทาง
             transform.localRotation = Quaternion.Euler(xRotation, yRotation, 0f);
-
-            // ไม่หมุน playerBody อีกต่อไป (ล็อกแกน Y ของตัวละครหุ่นไว้)
         }
     }
 
