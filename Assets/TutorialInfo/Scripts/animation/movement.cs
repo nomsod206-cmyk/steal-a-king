@@ -8,8 +8,9 @@ public class Movement : MonoBehaviour
     public float walkSpeed = 3f;
     public float runSpeed = 6f;
     public float jumpForce = 5f;
+    [Range(0, 1)] public float airControlMin = 0.3f; // แรงบังคับกลางอากาศ
 
-    [Header("ช่องใส่ Animation (ลากไฟล์ Animation มาใส่ที่นี่)")]
+    [Header("ช่องใส่ Animation")]
     public AnimationClip idleClip;
     public AnimationClip walkClip;
     public AnimationClip runClip;
@@ -34,10 +35,9 @@ public class Movement : MonoBehaviour
             mainCamera = Camera.main.transform;
         }
 
-        // ล็อคการหมุนไม่ให้ตัวละครล้มเมื่อใช้ฟิสิกส์ Rigidbody
         rb.freezeRotation = true;
+        rb.interpolation = RigidbodyInterpolation.Interpolate; // กันสั่น
 
-        // สั่งให้เล่นท่ายืนนิ่ง (Idle) ทันทีตั้งแต่เริ่มเกม เพื่อแก้ไขอาการ T-Pose
         if (idleClip != null)
         {
             animator.Play(idleClip.name);
@@ -51,99 +51,97 @@ public class Movement : MonoBehaviour
         float moveX = Input.GetAxisRaw("Horizontal");
         float moveZ = Input.GetAxisRaw("Vertical");
         
-        // 2. สร้าง Vector ทิศทางอิงตามทิศมุมกล้อง (Camera Space)
+        // 2. คำนวณทิศทางตามมุมกล้อง
         Vector3 moveDirection = Vector3.zero;
         if (mainCamera != null)
         {
             Vector3 camForward = mainCamera.forward;
             Vector3 camRight = mainCamera.right;
-
-            // ไม่เอาความชัน (แกน Y) ทำให้เดินเฉพาะแนวราบขนานกับพื้น และไม่ล้ม
             camForward.y = 0f;
             camRight.y = 0f;
-
             camForward.Normalize();
             camRight.Normalize();
-
             moveDirection = (camRight * moveX + camForward * moveZ).normalized;
         }
-        else
-        {
-            // ทำเป็น fallback ถ้าไม่มีกล้อง
-            moveDirection = (transform.right * moveX + transform.forward * moveZ).normalized;
-        }
 
-        // 3. ตรวจสอบการเดินและวิ่ง
         bool isWalking = moveDirection.sqrMagnitude > 0.01f;
         bool isRunning = isWalking && Input.GetKey(KeyCode.LeftShift);
         float currentSpeed = isRunning ? runSpeed : walkSpeed;
 
-        // 4. การเคลื่อนที่ตามทิศทางของหุ่น
+        // 3. การเคลื่อนที่และการหมุนตัว
         if (isWalking)
         {
-            rb.velocity = new Vector3(moveDirection.x * currentSpeed, rb.velocity.y, moveDirection.z * currentSpeed);
+            // หมุนตัวละครไปตามทิศที่เดิน
+            Quaternion targetRotation = Quaternion.LookRotation(moveDirection);
+            transform.rotation = Quaternion.Slerp(transform.rotation, targetRotation, Time.deltaTime * 10f);
             
-            // หมุนตัวละครให้หันหน้าไปทางเดินเสมอ ทิศทางนี้ Y จะเป็น 0 ทรงตัวตรงไม่ล่นล้ม
-            if (moveDirection != Vector3.zero)
+            if (isGrounded)
             {
-                Quaternion targetRotation = Quaternion.LookRotation(moveDirection);
-                transform.rotation = Quaternion.Slerp(transform.rotation, targetRotation, Time.deltaTime * 10f);
-            }
-        }
-        else
-        {
-            // ถ้าไม่กดปุ่ม ให้ความเร็วแนวราบเป็น 0 (หุ่นจะได้ไม่สไลด์)
-            rb.velocity = new Vector3(0, rb.velocity.y, 0);
-        }
-
-        // 5. กด Spacebar เพื่อกระโดด (ต้องอยู่บนพื้นเท่านั้น)
-        if (Input.GetKeyDown(KeyCode.Space) && isGrounded)
-        {
-            rb.AddForce(Vector3.up * jumpForce, ForceMode.Impulse);
-            isGrounded = false;
-            PlayAnimation(jumpClip); // เล่นท่ากระโดดทันที
-        }
-
-        // 6. เปลี่ยนแอนิเมชันตามสถานะปัจจุบัน (เฉพาะตอนอยู่บนพื้นเท่านั้น)
-        if (isGrounded)
-        {
-            if (isRunning)
-            {
-                PlayAnimation(runClip);     // ท่าวิ่ง
-            }
-            else if (isWalking)
-            {
-                PlayAnimation(walkClip);    // ท่าเดิน
+                // เดินบนพื้นปกติ
+                rb.linearVelocity = new Vector3(moveDirection.x * currentSpeed, rb.linearVelocity.y, moveDirection.z * currentSpeed);
             }
             else
             {
-                PlayAnimation(idleClip);    // ท่ายืนนิ่ง
+                // ควบคุมกลางอากาศ (Air Control)
+                Vector3 airMove = moveDirection * currentSpeed * airControlMin;
+                rb.AddForce(airMove, ForceMode.Acceleration);
             }
+        }
+        else if (isGrounded)
+        {
+            // หยุดเดินเมื่ออยู่บนพื้น
+            rb.linearVelocity = new Vector3(0, rb.linearVelocity.y, 0);
+        }
+
+        // 4. ระบบกระโดด (Space + W = Jump Forward)
+        if (Input.GetKeyDown(KeyCode.Space) && isGrounded)
+        {
+            float forwardJumpMultiplier = 0.6f; // ปรับค่านี้เพื่อให้พุ่งไปข้างหน้าแรงขึ้น
+            Vector3 jumpVector = Vector3.up * jumpForce;
+
+            if (isWalking)
+            {
+                // เพิ่มแรงส่งไปข้างหน้าตามหน้าหุ่น
+                jumpVector += transform.forward * (jumpForce * forwardJumpMultiplier);
+            }
+
+            // รีเซ็ต Y ก่อนกระโดดเพื่อให้แรงเท่ากันทุกครั้ง
+            rb.linearVelocity = new Vector3(rb.linearVelocity.x, 0, rb.linearVelocity.z);
+            rb.AddForce(jumpVector, ForceMode.Impulse);
+            
+            isGrounded = false;
+            PlayAnimation(jumpClip);
+        }
+
+        // 5. อัปเดตแอนิเมชัน
+        UpdateAnimationState(isWalking, isRunning);
+    }
+
+    private void UpdateAnimationState(bool isWalking, bool isRunning)
+    {
+        if (!isGrounded) return; // ถ้าลอยอยู่ ให้เล่นท่า Jump ต่อไป
+
+        if (isRunning) PlayAnimation(runClip);
+        else if (isWalking) PlayAnimation(walkClip);
+        else PlayAnimation(idleClip);
+    }
+
+    private void PlayAnimation(AnimationClip clip)
+    {
+        if (clip == null) return;
+        if (currentAnimName != clip.name)
+        {
+            animator.CrossFadeInFixedTime(clip.name, 0.15f);
+            currentAnimName = clip.name;
         }
     }
 
-    void OnCollisionEnter(Collision collision)
+    private void OnCollisionEnter(Collision collision)
     {
-        // เมื่อชนวัตถุใดๆ (ที่คาดว่าเป็นพื้น) ให้สามารถกระโดดใหม่ได้
-        // (สามารถประยุกต์เช็ค collision.gameObject.CompareTag("Ground") ได้ถ้าต้องการ)
-        isGrounded = true;
-    }
-
-    // ฟังก์ชันสำหรับเล่นแอนิเมชันอย่างนุ่มนวล
-    private void PlayAnimation(AnimationClip clip)
-    {
-        // ป้องกัน Error หากไม่ได้ใส่ไฟล์ Animation มาให้
-        if (clip == null) return;
-        
-        // ใช้ชื่อไฟล์ของ Animation เป็นตัวกำหนดเป้าหมาย
-        string targetAnim = clip.name;
-
-        // เปลี่ยนแอนิเมชันเฉพาะเมื่อไม่ใช่แอนิเมชันเดิม เพื่อไม่ให้มันเล่นตั้งแต่จุดเริ่มต้นซ้ำๆ
-        if (currentAnimName != targetAnim)
+        // ตรวจสอบว่าชนพื้น (แนะนำให้ใส่ Tag "Ground" ที่พื้นใน Unity)
+        if (collision.gameObject.CompareTag("Ground") || collision.relativeVelocity.y > 0.1f)
         {
-            // ใช้ CrossFadeInFixedTime ช่วยให้การเปลี่ยนผ่านระหว่างแอนิเมชันสมูทขึ้น (ในระยะเวลา 0.15 วิ)
-            animator.CrossFadeInFixedTime(targetAnim, 0.15f);
-            currentAnimName = targetAnim;
+            isGrounded = true;
         }
     }
 }
